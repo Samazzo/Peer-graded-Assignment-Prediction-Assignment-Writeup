@@ -1,0 +1,108 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Auke Beeksma"
+date: "1 februari 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prediction Assignment Writeup, Introduction 
+The goal of this analysis is to predict the "classe" variable in the training set. You may use any of the other variables to predict with. This is a report describing how I built the model, and what you think the expected out of sample error is. The choices which are inherent by making machine learning algorithms are also described. Last but not least is the best performing model tested on the testsample.
+
+## Data and background
+Information about the data and background is found here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+## Getting the data and getting it right
+split the trainingset into a training and testing part using the proportion 0.7/0.3 as learned this course.
+Also getting the testdata
+```{r}
+library(caret)
+library(corrplot)
+library(randomForest)
+library(rattle)
+library(rpart)
+
+training_data <- read.csv("c:/Users/auke.beeksma/Desktop/pml-training.csv")
+intrain <- createDataPartition(training_data$classe, p = .7, list= FALSE)
+training <-training_data[intrain,] 
+testing <- training_data[-intrain,]
+prediction_data <-  read.csv("c:/Users/auke.beeksma/Desktop/pml-testing.csv")
+```
+# Remove variables which don't add variance
+```{r} 
+nsv <- nearZeroVar(training)
+training <- (training[, - nsv])
+testing <- (testing[, - nsv])
+```
+# Remove variables with no prediction value. i.e identificationcodes (X, user_name, timestamps)
+```{r}
+training <- (training[, - (1:5)])
+testing <- (testing[, - (1:5)])
+```
+# There are many columns with a lot of NA's. Only work with columns with more then 50% percent is not NA.
+```{r}
+training <- training[, -which(colMeans(is.na(training)) > 0.5)]
+testing <- testing[, -which(colMeans(is.na(testing)) > 0.5)]
+```
+# Making three different models with three different methods. Just using with different settings for each method.
+The main purpose is to predict "classe" which is a five-class category.
+Therefore I use three multiclass classification strategies: random forest, rpart, and svm.
+
+# Random forest 
+```{r}
+set.seed(1337)
+train_control <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+model_rf <- train(classe~., method = "rf", data = training, trControl = train_control)
+model_rf$finalModel
+```
+The estimated error rate is .2% which is really small. Lets use it to predict on the testingdata.
+```{r}
+pred_rf <- predict(model_rf, newdata = testing)
+pred_matrix_rf <- confusionMatrix(pred_rf, testing$classe)
+plot(pred_matrix_rf$table, col = pred_matrix_rf$byClass, main = paste("Accuracy Random Forest =", round(pred_matrix_rf$overall['Accuracy'], 4)))
+```
+When testing on testdata is gives an accuracy of .999, pretty good.
+
+# RPart
+```{r}
+set.seed(1337)
+model_rpa <- rpart(classe~., data = training, method = "class")
+fancyRpartPlot(model_rpa)
+```
+
+A decision tree, now predict it on the testdata. 
+```{r}
+pred_rpa <- predict(model_rpa, newdata = testing, type = "class")
+pred_matrix_rpa <- confusionMatrix(pred_rpa, testing$classe)
+pred_matrix_rpa
+plot(pred_matrix_rpa$table, col = pred_matrix_rpa$byClass, 
+     main = paste("Accuracy decision tree=",
+                  round(pred_matrix_rpa$overall['Accuracy'], 4)))
+```
+With an accuracy of .8 its performing slightly worst then with random forest.
+
+# SVM
+```{r}
+set.seed(1337)
+train_control <- trainControl(method = "repeatedcv", number = 3, repeats = 3, verbose = FALSE)
+model_svm <- train(classe~., method = "svmRadial", data = training, trControl = train_control)
+model_svm$finalModel
+```
+The training error is .06 which isn't bad but not quit as good as the random forest method.
+
+```{r}
+pred_svm <- predict(model_svm, newdata = testing)
+pred_matrix_svm <- confusionMatrix(pred_svm, testing$classe)
+pred_matrix_svm 
+
+plot(pred_matrix_svm$table, col = pred_matrix_svm$byClass, main = paste("support vector machine - Accuracy =",
+                                                                      round(pred_matrix_svm$overall['Accuracy'], 4)))
+```
+On the test data is performs good with an accuracy of .93. Needless to say but the overall winner is random forest. This model we use to predict on the predictiondata.
+
+# Final prediction with Random forest.
+prediction_final <- predict(model_rf, newdata = prediction_data)
+prediction_final
